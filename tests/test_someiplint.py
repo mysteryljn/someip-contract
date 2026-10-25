@@ -26,4 +26,48 @@ class SomeIpTests(unittest.TestCase):
         self.assertIn("version must contain non-negative major/minor", errors)
         self.assertIn("methods[0]: method id must be uint16", errors)
         self.assertIn("events[0]: event id must be uint16", errors)
+
+    def test_service_discovery_service_id_is_reserved(self):
+        # 0xFFFF identifies SOME/IP Service Discovery and cannot identify an
+        # application service without colliding with SD traffic.
+        errors = lint({
+            "service_id": 0xFFFF,
+            "version": {"major": 1, "minor": 0},
+            "methods": [{"id": 1, "name": "M", "reliability": "reliable"}],
+            "events": [],
+        })
+        self.assertIn(
+            "service_id 0xffff is reserved for SOME/IP Service Discovery",
+            errors,
+        )
+
+    def test_unhashable_ids_are_reported_without_crashing(self):
+        # JSON arrays and objects are invalid IDs.  They used to raise
+        # TypeError while the linter built duplicate/collision sets, which
+        # made malformed contracts crash CI instead of returning diagnostics.
+        errors = lint({
+            "service_id": 1,
+            "version": {"major": 1, "minor": 0},
+            "methods": [{"id": [], "name": "M", "reliability": "reliable"}],
+            "events": [{"id": {"raw": 2}, "reliability": "reliable"}],
+        })
+        self.assertIn("methods[0]: method id must be uint16", errors)
+        self.assertIn("events[0]: event id must be uint16", errors)
+
+    def test_mixed_hashable_invalid_ids_do_not_break_collision_check(self):
+        # Sorting an int and a string directly raises TypeError on Python 3.
+        errors = lint({
+            "service_id": 1,
+            "version": {"major": 1, "minor": 0},
+            "methods": [
+                {"id": 2, "name": "M", "reliability": "reliable"},
+                {"id": "raw", "name": "N", "reliability": "reliable"},
+            ],
+            "events": [
+                {"id": 2, "reliability": "reliable"},
+                {"id": "raw", "reliability": "reliable"},
+            ],
+        })
+        self.assertIn("method/event id collision 2", errors)
+        self.assertIn("method/event id collision raw", errors)
 if __name__=="__main__": unittest.main()

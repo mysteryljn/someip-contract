@@ -15,11 +15,30 @@ def lint(spec):
     def is_int(value):
         return type(value) is int
 
+    def is_hashable(value):
+        # JSON arrays and objects can appear where an ID is expected.  They
+        # are invalid IDs, but must still produce validation errors instead of
+        # crashing the linter while constructing duplicate-ID sets.
+        try:
+            hash(value)
+        except TypeError:
+            return False
+        return True
+
     def add(kind,ident,where):
+        if not is_hashable(ident):
+            return
         key=(kind,ident)
         if key in ids: errors.append("%s: duplicate %s id %s (also %s)"%(where,kind,ident,ids[key]))
         else: ids[key]=where
-    if not is_int(spec.get("service_id")) or not 0<=spec["service_id"]<=0xffff: errors.append("service_id must be uint16")
+    service_id = spec.get("service_id")
+    if not is_int(service_id) or not 0<=service_id<=0xffff:
+        errors.append("service_id must be uint16")
+    elif service_id == 0xffff:
+        # 0xFFFF is assigned to SOME/IP Service Discovery.  Treating it as
+        # an application service would make its message IDs collide with SD
+        # traffic on every ECU using this contract.
+        errors.append("service_id 0xffff is reserved for SOME/IP Service Discovery")
     version=spec.get("version",{})
     if not isinstance(version,dict):
         errors.append("version must be an object")
@@ -50,8 +69,10 @@ def lint(spec):
         add("event",e.get("id"),where)
         if not is_int(e.get("id")) or not 0<=e["id"]<=0xffff: errors.append(where+": event id must be uint16")
         if e.get("reliability") not in ("reliable","unreliable"): errors.append(where+": reliability is required")
-    method_ids={m.get("id") for m in methods if isinstance(m,dict)}; event_ids={e.get("id") for e in events if isinstance(e,dict)}
-    for ident in sorted(method_ids & event_ids): errors.append("method/event id collision %s"%ident)
+    method_ids={m.get("id") for m in methods if isinstance(m,dict) and is_hashable(m.get("id"))}; event_ids={e.get("id") for e in events if isinstance(e,dict) and is_hashable(e.get("id"))}
+    # Use a representation-based key because malformed but hashable IDs can
+    # have incomparable Python types (for example, an int and a string).
+    for ident in sorted(method_ids & event_ids, key=repr): errors.append("method/event id collision %s"%ident)
     return errors
 def main(argv=None):
     p=argparse.ArgumentParser(description="Validate a SOME/IP service contract"); p.add_argument("spec",type=Path); a=p.parse_args(argv)
