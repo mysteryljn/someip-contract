@@ -1,0 +1,1 @@
+{"service_id":4660,"version":{"major":1,"minor":0},"methods":[{"id":1,"name":"GetStatus","reliability":"reliable"}],"events":[{"id":32769,"name":"StatusChanged","reliability":"unreliable"}]}
