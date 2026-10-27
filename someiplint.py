@@ -74,7 +74,7 @@ def lint(spec):
             # SOME/IP-SD protocol traffic (including magic-cookie messages).
             errors.append(where+": method id 0x%04x is reserved" % m["id"])
         if m.get("reliability") not in ("reliable","unreliable"): errors.append(where+": reliability is required")
-        if not isinstance(m.get("name"),str) or not m["name"]: errors.append(where+": name is required")
+        if not isinstance(m.get("name"),str) or not m["name"].strip(): errors.append(where+": name is required")
     events=spec.get("events",[])
     if not isinstance(events,list):
         errors.append("events must be an array")
@@ -98,7 +98,10 @@ def lint(spec):
 def main(argv=None):
     p=argparse.ArgumentParser(description="Validate a SOME/IP service contract"); p.add_argument("spec",type=Path); a=p.parse_args(argv)
     try: errors=lint(json.loads(a.spec.read_text(encoding="utf-8")))
-    except (OSError,json.JSONDecodeError) as e: print("error: "+str(e)); return 2
+    # A deeply nested JSON document can exceed the interpreter recursion limit
+    # while decoding.  Contract files are external input, so report this as a
+    # normal input error instead of leaking a traceback from the CLI.
+    except (OSError,json.JSONDecodeError,RecursionError) as e: print("error: "+str(e)); return 2
     if errors: print("\n".join("ERROR "+e for e in errors)); return 1
     print("OK: SOME/IP contract passed"); return 0
 if __name__=="__main__": raise SystemExit(main())

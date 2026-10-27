@@ -1,8 +1,20 @@
+import tempfile
 import unittest
-from someiplint import lint
+from pathlib import Path
+from someiplint import lint, main
 class SomeIpTests(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(lint({"service_id":1,"version":{"major":1,"minor":0},"methods":[{"id":1,"name":"M","reliability":"reliable"}],"events":[]}),[])
+
+    def test_method_names_must_contain_non_whitespace(self):
+        errors = lint({
+            "service_id": 1,
+            "version": {"major": 1, "minor": 0},
+            "methods": [{"id": 1, "name": "   ", "reliability": "reliable"}],
+            "events": [],
+        })
+        self.assertIn("methods[0]: name is required", errors)
+
     def test_collision(self):
         errors=lint({"service_id":1,"version":{"major":1,"minor":0},"methods":[{"id":2,"name":"M","reliability":"reliable"}],"events":[{"id":2,"reliability":"reliable"}]})
         self.assertTrue(any("collision" in e for e in errors))
@@ -117,4 +129,11 @@ class SomeIpTests(unittest.TestCase):
         })
         self.assertIn("method/event id collision 2", errors)
         self.assertIn("method/event id collision raw", errors)
+
+    def test_cli_reports_deeply_nested_json_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "contract.json"
+            path.write_text("[" * 3000 + "]" * 3000, encoding="utf-8")
+            self.assertEqual(main([str(path)]), 2)
+
 if __name__=="__main__": unittest.main()
