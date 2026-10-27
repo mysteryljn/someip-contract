@@ -41,6 +41,53 @@ class SomeIpTests(unittest.TestCase):
             errors,
         )
 
+    def test_reserved_service_id_zero_is_rejected(self):
+        errors = lint({
+            "service_id": 0,
+            "version": {"major": 1, "minor": 0},
+            "methods": [],
+            "events": [],
+        })
+        self.assertIn("service_id 0x0000 is reserved", errors)
+
+    def test_reserved_method_and_event_ids_are_rejected(self):
+        # SOME/IP-SD reserves these values for protocol traffic and magic
+        # cookie messages.  An application contract must not claim them.
+        reserved = (0x0000, 0x7fff, 0x8000, 0xffff)
+        errors = lint({
+            "service_id": 1,
+            "version": {"major": 1, "minor": 0},
+            "methods": [
+                {"id": ident, "name": "M%d" % ident, "reliability": "reliable"}
+                for ident in reserved
+            ],
+            "events": [
+                {"id": ident, "reliability": "unreliable"}
+                for ident in reserved
+            ],
+        })
+        for ident in reserved:
+            self.assertIn(
+                "methods[%d]: method id 0x%04x is reserved" % (reserved.index(ident), ident),
+                errors,
+            )
+            self.assertIn(
+                "events[%d]: event id 0x%04x is reserved" % (reserved.index(ident), ident),
+                errors,
+            )
+
+    def test_version_components_must_fit_wire_uint8(self):
+        # The SOME/IP interface version is encoded in an 8-bit header field.
+        # Values above 255 would be truncated by a serializer and could make
+        # incompatible interfaces appear to use the same version.
+        errors = lint({
+            "service_id": 1,
+            "version": {"major": 256, "minor": 300},
+            "methods": [],
+            "events": [],
+        })
+        self.assertIn("version major/minor must fit uint8 (0..255)", errors)
+
     def test_unhashable_ids_are_reported_without_crashing(self):
         # JSON arrays and objects are invalid IDs.  They used to raise
         # TypeError while the linter built duplicate/collision sets, which
