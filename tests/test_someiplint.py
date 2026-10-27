@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from someiplint import lint, main
 class SomeIpTests(unittest.TestCase):
     def test_valid(self):
@@ -134,6 +135,13 @@ class SomeIpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "contract.json"
             path.write_text("[" * 3000 + "]" * 3000, encoding="utf-8")
-            self.assertEqual(main([str(path)]), 2)
+            # JSON decoder depth limits differ across supported Python
+            # versions: some raise RecursionError while newer decoders parse
+            # the array and let the contract-shape validator return 1.
+            self.assertIn(main([str(path)]), (1, 2))
+            # Exercise the error-handling branch directly so the regression
+            # remains meaningful even when the runtime accepts this depth.
+            with patch("someiplint.json.loads", side_effect=RecursionError("deep JSON")):
+                self.assertEqual(main([str(path)]), 2)
 
 if __name__=="__main__": unittest.main()
